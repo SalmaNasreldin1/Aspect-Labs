@@ -9,12 +9,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/auth")
@@ -35,29 +42,40 @@ public class AuthController {
             HttpServletResponse response) throws Exception {
 
         try {
-            authenticationManager.authenticate(
+            Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(
                             authRequest.getUsername(),
                             authRequest.getPassword()
                     )
             );
+
+            final UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+            final String jwt = jwtTokenUtil.generateToken(userDetails);
+
+            // Get user roles
+            List<String> roles = userDetails.getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .collect(Collectors.toList());
+
+            // Setting JWT as an HTTP-only cookie (Bonus requirement)
+            Cookie cookie = new Cookie("jwt", jwt);
+            cookie.setHttpOnly(true);
+            cookie.setSecure(true); // Use in production with HTTPS
+            cookie.setPath("/");
+            cookie.setMaxAge(24 * 60 * 60); // 1 day in seconds
+            response.addCookie(cookie);
+
+            // Enhanced response with role information
+            Map<String, Object> responseMap = new HashMap<>();
+            responseMap.put("token", jwt);
+            responseMap.put("username", userDetails.getUsername());
+            responseMap.put("roles", roles);
+            responseMap.put("isAdmin", roles.contains("ROLE_ADMIN"));
+
+            return ResponseEntity.ok(responseMap);
+
         } catch (Exception e) {
             return ResponseEntity.status(401).body("Invalid username or password");
         }
-
-        final UserDetails userDetails = userDetailsService
-                .loadUserByUsername(authRequest.getUsername());
-
-        final String jwt = jwtTokenUtil.generateToken(userDetails);
-
-        // Setting JWT as an HTTP-only cookie (Bonus requirement)
-        Cookie cookie = new Cookie("jwt", jwt);
-        cookie.setHttpOnly(true);
-        cookie.setSecure(true); // Use in production with HTTPS
-        cookie.setPath("/");
-        cookie.setMaxAge(24 * 60 * 60); // 1 day in seconds
-        response.addCookie(cookie);
-
-        return ResponseEntity.ok(new AuthResponse(jwt));
     }
 }
