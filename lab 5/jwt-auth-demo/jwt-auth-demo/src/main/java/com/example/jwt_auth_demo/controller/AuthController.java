@@ -1,56 +1,62 @@
 package com.example.jwt_auth_demo.controller;
 
-import com.example.jwt_auth_demo.dto.AuthRequest;
-import com.example.jwt_auth_demo.dto.AuthResponse;
-import com.example.jwt_auth_demo.security.JwtUtil;
+import com.example.jwt_auth_demo.model.AuthRequest;
+import com.example.jwt_auth_demo.model.AuthResponse;
+import com.example.jwt_auth_demo.security.JwtTokenUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@RequestMapping("/auth")
 public class AuthController {
 
-    private final AuthenticationManager authenticationManager;
-    private final UserDetailsService userDetailsService;
-    private final JwtUtil jwtUtil;
+    @Autowired
+    private AuthenticationManager authenticationManager;
 
-    public AuthController(AuthenticationManager authenticationManager,
-                          UserDetailsService userDetailsService,
-                          JwtUtil jwtUtil) {
-        this.authenticationManager = authenticationManager;
-        this.userDetailsService = userDetailsService;
-        this.jwtUtil = jwtUtil;
-    }
+    @Autowired
+    private UserDetailsService userDetailsService;
 
-    @PostMapping("/authenticate")
-    public ResponseEntity<?> createAuthenticationToken(@RequestBody AuthRequest authRequest,
-                                                       HttpServletResponse response) throws Exception {
+    @Autowired
+    private JwtTokenUtil jwtTokenUtil;
+
+    @PostMapping("/login")
+    public ResponseEntity<?> createAuthenticationToken(
+            @RequestBody AuthRequest authRequest,
+            HttpServletResponse response) throws Exception {
+
         try {
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(authRequest.getUsername(), authRequest.getPassword())
+                    new UsernamePasswordAuthenticationToken(
+                            authRequest.getUsername(),
+                            authRequest.getPassword()
+                    )
             );
-        } catch (BadCredentialsException e) {
-            throw new Exception("Incorrect username or password", e);
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body("Invalid username or password");
         }
 
-        final UserDetails userDetails = userDetailsService.loadUserByUsername(authRequest.getUsername());
-        final String jwt = jwtUtil.generateToken(userDetails);
+        final UserDetails userDetails = userDetailsService
+                .loadUserByUsername(authRequest.getUsername());
 
-        // Create JWT cookie (for bonus requirement)
-        Cookie jwtCookie = new Cookie("jwt", jwt);
-        jwtCookie.setHttpOnly(true);
-        jwtCookie.setSecure(false); // Set to true in production with HTTPS
-        jwtCookie.setPath("/");
-        jwtCookie.setMaxAge(24 * 60 * 60); // 24 hours in seconds
-        response.addCookie(jwtCookie);
+        final String jwt = jwtTokenUtil.generateToken(userDetails);
+
+        // Setting JWT as an HTTP-only cookie (Bonus requirement)
+        Cookie cookie = new Cookie("jwt", jwt);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(true); // Use in production with HTTPS
+        cookie.setPath("/");
+        cookie.setMaxAge(24 * 60 * 60); // 1 day in seconds
+        response.addCookie(cookie);
 
         return ResponseEntity.ok(new AuthResponse(jwt));
     }
